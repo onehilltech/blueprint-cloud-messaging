@@ -17,7 +17,8 @@
 
 const {
   Service,
-  model
+  model,
+  service
 } = require ('@onehilltech/blueprint');
 
 const assert = require ('assert');
@@ -47,6 +48,10 @@ module.exports = Service.extend ({
 
   dryRun: true,
 
+  gatekeeper: service (),
+
+  _tokenGenerator: null,
+
   init () {
     this._super.call (this, ...arguments);
 
@@ -57,6 +62,29 @@ module.exports = Service.extend ({
 
     this.dryRun = get (config, 'dryRun', this.dryRun);
     this._sender = gcm.Sender (config.apiKey);
+
+    this._tokenGenerator = this.gatekeeper.makeNamedTokenGenerator ('firebase.device');
+  },
+
+  /**
+   * Generate the token for the device.
+   *
+   * @param device
+   * @return {*}
+   */
+  generateToken (device) {
+    assert (device.modelName && device.modelName === this.FirebaseDevice.modelName, 'The device parameter is not a FirebaseDevice model.');
+    return this._tokenGenerator.generateToken ({}, {jwtid: device.id});
+  },
+
+  /**
+   * Verify the device token.
+   *
+   * @param token
+   * @return {*}
+   */
+  verifyToken (token) {
+    return this._tokenGenerator.verifyToken (token);
   },
 
   /**

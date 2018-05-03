@@ -14,38 +14,30 @@
  * limitations under the License.
  */
 
-'use strict';
-
-const dab      = require ('@onehilltech/dab')
-  , gatekeeper = require ('@onehilltech/blueprint-gatekeeper')
-;
+const dab = require ('@onehilltech/dab');
 
 module.exports = {
   native: [
-    { name: 'client1', email: 'contact@client1.com', client_secret: 'client1', scope: [gatekeeper.scope.client.create] },
+    { name: 'client1', email: 'contact@client1.com', client_secret: 'client1', scope: ['gatekeeper.account.create'] },
     { name: 'client2', email: 'contact@client2.com', client_secret: 'client2'},
     { name: 'client3', email: 'contact@client3.com', client_secret: 'client3', enabled: false }
   ],
 
-  accounts: dab.times (5, function (i, opts, callback) {
-    const username = 'account' + i;
-
-    return callback (null, { username: username, password: username, email: `${username}@.no-reply.com`})
+  accounts: dab.times (5, function (i) {
+    const username = `account${i}`;
+    return { username: username, password: username, email: `${username}@.no-reply.com`};
   }),
 
-  client_tokens: dab.map (dab.get ('native'), function (client, opts, callback) {
-    const model = { client: dab.get ('native.0'), account: client._id };
-    return callback (null, model);
+  client_tokens: dab.map (dab.get ('native'), function (client) {
+    return { client: dab.get ('native.0'), account: client._id };
   }),
 
-  user_tokens: dab.map (dab.get ('accounts'), function (account, opts, callback) {
-    const model = {
+  user_tokens: dab.map (dab.get ('accounts'), function (account) {
+    return {
       client: dab.get ('native.0'),
       account: account._id,
       refresh_token: dab.id ()
     };
-
-    return callback (null, model);
   }),
 
   devices: [

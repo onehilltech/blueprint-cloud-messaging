@@ -1,5 +1,4 @@
 const {expect} = require ('chai');
-const FirebaseDevice = require ('../../../../app/models/firebase-device');
 const {waterfall} = require ('async');
 
 describe ('app | models | FirebaseDevice', function () {
