@@ -73,7 +73,7 @@ module.exports = Service.extend ({
    * @return {*}
    */
   generateToken (device) {
-    assert (device.modelName && device.modelName === this.FirebaseDevice.modelName, 'The device parameter is not a FirebaseDevice model.');
+    assert (Object.getPrototypeOf (device) === this.FirebaseDevice.prototype, 'The device parameter is not a FirebaseDevice model.');
     return this._tokenGenerator.generateToken ({}, {jwtid: device.id});
   },
 
