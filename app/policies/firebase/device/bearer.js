@@ -17,7 +17,8 @@
 const {
   Policy,
   BadRequestError,
-  model
+  model,
+  service
 } = require ('@onehilltech/blueprint');
 
 /**
@@ -26,6 +27,8 @@ const {
  * Bearer policy for the device token.
  */
 module.exports = Policy.extend ({
+  fcm: service (),
+
   FirebaseDevice: model ('firebase-device'),
 
   runCheck (req) {
@@ -39,7 +42,7 @@ module.exports = Policy.extend ({
     if (scheme !== 'Bearer')
       return Promise.reject (new BadRequestError ('bad_protocol', 'The request has an unsupported authorization protocol.'));
 
-    return this.FirebaseDevice.verifyDeviceToken (token)
+    return this.fcm.verifyToken (token)
       .then (payload => this.FirebaseDevice.findById (payload.jti))
       .then (device => {
         if (!device)

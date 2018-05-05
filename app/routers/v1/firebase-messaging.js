@@ -45,10 +45,10 @@ module.exports = {
       },
 
       '/claims': {
-        policy: all ([
+        policy: all.ordered ([
           check ('gatekeeper.auth.bearer'),
           check ('gatekeeper.request.user')
-        ]),
+        ], 'unauthorized_claim', 'The request is not authorized to manage the device claim.'),
 
         /*
          * Claim an existing device.

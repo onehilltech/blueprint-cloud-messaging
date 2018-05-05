@@ -1,198 +1,224 @@
-const {expect}  = require ('chai');
-const async     = require ('async');
-const blueprint = require ('@onehilltech/blueprint');
 
-describe ('app | routers | v1 | FirebaseMessagingRouter', function () {
+/*
+ * Copyright (c) 2018 One Hill Technologies, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+const blueprint = require ('@onehilltech/blueprint');
+const {expect}  = require ('chai');
+const {seed, Types: {ObjectId}} = require ('@onehilltech/blueprint-mongodb');
+
+const {
+  testing: {
+    request
+  }
+} = require ('@onehilltech/blueprint-gatekeeper');
+
+describe.only ('app | routers | v1 | firebase-messaging', function () {
+  function generateDeviceToken (device) {
+    return blueprint.lookup ('service:fcm').generateToken (device);
+  }
+
   describe ('/v1/firebase/devices', function () {
     describe ('POST', function () {
-      it ('should register a device', function (done) {
-        const device = {device: '1234567890'};
-        const native = blueprint.app.seeds.$default.native[0];
+      it ('should register a device', function () {
+        const _id = new ObjectId ();
+        const device = {_id: _id.toString (), device: '1234567890'};
+        const {native} = seed ();
 
-        async.waterfall ([
-          function (callback) {
-            blueprint.testing.request ()
-              .post ('/v1/firebase/devices')
-              .withClientToken (0)
-              .send ({device})
-              .expect (200).end (callback);
-          },
-
-          function (res, callback) {
-            expect (res.body).to.have.deep.property ('device.device_token');
-            expect (res.body).to.have.deep.property ('device.client', native.id);
-
-            return callback (null);
-          }
-        ], done);
+        return request ()
+          .post ('/v1/firebase/devices')
+          .withClientToken (0)
+          .send ({device})
+          .expect (200, {device: Object.assign ({client: native[0].id}, device)});
       });
 
-      it ('should register a device with token', function (done) {
+      it ('should register a device with token', function () {
+        const FirebaseDevice = blueprint.lookup ('model:firebase-device');
         let device = {device: '0987654321', token: 'aabbccdd'};
 
-        async.waterfall ([
-          function (callback) {
-            blueprint.testing.request ()
-              .post ('/v1/firebase/devices')
-              .withClientToken (0)
-              .send ({device})
-              .expect (200, callback);
-          },
-
-          function (res, callback) {
-            async.waterfall ([
-              function (callback) {
-                FirebaseDevice.findOne ({device: device.device}, callback);
-              },
-
-              function (model, callback) {
-                expect (res.body.device).to.eql (model.lean ());
-                return callback (null);
-              }
-            ], callback);
-          }
-        ], done);
-
-
+        return request ()
+          .post ('/v1/firebase/devices')
+          .withClientToken (0)
+          .send ({device})
+          .expect (200)
+          .then (res => {
+            return FirebaseDevice.findOne ({device: device.device}).then (model => {
+              expect (res.body.device).to.eql (model.lean ());
+            })
+          });
       });
     });
 
     describe ('DELETE', function () {
-      it ('should remove a device', function (done) {
-        const device = blueprint.app.seeds.$default.devices[0];
+      it ('should remove a device', function () {
+        const {devices} = seed ();
 
-        blueprint.testing.request ()
-          .delete ('/v1/firebase/devices')
-          .set ('Authorization', `Bearer ${device.device_token}`)
-          .expect (200, 'true', done);
+        return generateDeviceToken (devices[0]).then (token => {
+          return request ()
+            .delete ('/v1/firebase/devices')
+            .set ('Authorization', `Bearer ${token}`)
+            .expect (200, 'true');
+        })
       });
 
-      it ('should not permit double removal of device', function (done) {
-        const device = blueprint.app.seeds.$default.devices[0];
+      it ('should not permit double removal of device', function () {
+        const {devices} = seed ();
 
-        async.series ([
-          function (callback) {
-            blueprint.testing.request ()
+        return generateDeviceToken (devices[0])
+          .then (token => {
+            return request ()
               .delete ('/v1/firebase/devices')
-              .set ('Authorization', `Bearer ${device.device_token}`)
-              .expect (200, 'true', callback);
-          },
-
-          function (callback) {
-            blueprint.testing.request ()
+              .set ('Authorization', `Bearer ${token}`)
+              .expect (200, 'true')
+              .then (() => token)
+          })
+          .then (token => {
+            return request ()
               .delete ('/v1/firebase/devices')
-              .set ('Authorization', `Bearer ${device.device_token}`)
+              .set ('Authorization', `Bearer ${token}`)
               .expect (403, { errors:
-                  [ { code: 'policy_failed',
+                  [ { code: 'invalid_device',
                     detail: 'The device for the request does not exist.',
-                    status: '403' } ] }, callback);
-          }
-        ], done);
+                    status: '403' } ] });
+          });
       })
     });
   });
 
   describe ('/v1/firebase/devices/tokens', function () {
     describe ('POST', function () {
-      it ('should initialize the device token', function (done) {
-        const device = blueprint.app.seeds.$default.devices[3];
+      it ('should initialize the device token', function () {
+        const {devices} = seed ();
+        const device = devices[3];
 
-        const expected = device.lean ();
-        expected.token = 'abc';
+        return generateDeviceToken (device).then (token => {
+          const expected = device.lean ();
+          expected.token = 'abc';
 
-        blueprint.testing.request ()
-          .post ('/v1/firebase/devices/tokens')
-          .send ({device: {token: 'abc'}})
-          .set ('Authorization', `Bearer ${device.device_token}`)
-          .expect (200, {device: expected}, done);
+          return request ()
+            .post ('/v1/firebase/devices/tokens')
+            .send ({device: {token: 'abc'}})
+            .set ('Authorization', `Bearer ${token}`)
+            .expect (200, {device: expected});
+        });
       });
 
-      it ('should refresh the existing device token', function (done) {
-        const device = blueprint.app.seeds.$default.devices[0];
+      it ('should refresh the existing device token', function () {
+        const {devices} = seed ();
+        const device = devices[0];
 
         const expected = device.lean ();
         expected.token = 'abc';
 
-        blueprint.testing.request ()
-          .post ('/v1/firebase/devices/tokens')
-          .send ({device: {token: 'abc'}})
-          .set ('Authorization', `Bearer ${device.device_token}`)
-          .expect (200, {device: expected}, done);
+        return generateDeviceToken (device).then (token => {
+          return request ()
+            .post ('/v1/firebase/devices/tokens')
+            .send ({device: {token: 'abc'}})
+            .set ('Authorization', `Bearer ${token}`)
+            .expect (200, {device: expected});
+        });
       });
     });
   });
 
   describe ('/v1/firebase/devices/claims', function () {
     describe ('POST', function () {
-      it ('should claim an unclaimed device', function (done) {
-        const device = blueprint.app.seeds.$default.devices[0];
-        const user = blueprint.app.seeds.$default.accounts[0];
+      it ('should claim an unclaimed device', function () {
+        const {devices,accounts} = seed ();
+        const device = devices[0];
+        const account = accounts[0];
 
         let expected = device.lean ();
         delete expected.id;
 
-        expected.user = user.id;
+        expected.user = account.id;
 
-        blueprint.testing.request ()
-          .post ('/v1/firebase/devices/claims')
-          .withUserToken (0)
-          .send ({device: {device: device.device_token}})
-          .expect (200, {device: expected}, done);
+        return generateDeviceToken (device).then (token => {
+          return request ()
+            .post ('/v1/firebase/devices/claims')
+            .withUserToken (0)
+            .send ({device: {device: token}})
+            .expect (200, {device: expected});
+        });
       });
 
-      it ('should not allow client to claim a device', function (done) {
-        const device = blueprint.app.seeds.$default.devices[0];
+      it ('should not allow client to claim a device', function () {
+        const {devices} = seed ();
+        const device = devices[0];
 
-        blueprint.testing.request ()
-          .post ('/v1/firebase/devices/claims')
-          .withClientToken (0)
-          .send ({device: {device: device.device_token}})
-          .expect (403, { errors:
-              [ { code: 'policy_failed',
-                detail: 'Not a user token',
-                status: '403' } ] }, done);
+        return generateDeviceToken (device).then (token => {
+          return request ()
+            .post ('/v1/firebase/devices/claims')
+            .withClientToken (0)
+            .send ({device: {device: token}})
+            .expect (403, { errors:
+                [ { code: 'unauthorized_claim',
+                  detail: 'The request is not authorized to manage the device claim.',
+                  status: '403' } ] });
+        });
       });
     });
 
     describe ('DELETE', function () {
-      it ('should unclaim an claimed device', function (done) {
-        const device = blueprint.app.seeds.$default.devices[4];
+      it ('should unclaim an claimed device', function () {
+        const {devices} = seed ();
+        const device = devices[4];
 
         let expected = device.lean ();
         delete expected.id;
         delete expected.user;
 
-        blueprint.testing.request ()
-          .delete ('/v1/firebase/devices/claims')
-          .withUserToken (0)
-          .send ({device: {device: device.device_token}})
-          .expect (200, {device: expected}, done);
+        return generateDeviceToken (device).then (token => {
+          return request ()
+            .delete ('/v1/firebase/devices/claims')
+            .withUserToken (0)
+            .send ({device: {device: token}})
+            .expect (200, {device: expected});
+        });
       });
 
-      it ('should not allow client to unclaim a device', function (done) {
-        const device = blueprint.app.seeds.$default.devices[0];
+      it ('should not allow client to unclaim a device', function () {
+        const {devices} = seed ();
+        const device = devices[0];
 
-        blueprint.testing.request ()
-          .delete ('/v1/firebase/devices/claims')
-          .withClientToken (0)
-          .send ({device: {device: device.device_token}})
-          .expect (403, { errors:
-              [ { code: 'policy_failed',
-                detail: 'Not a user token',
-                status: '403' } ] }, done);
+        return generateDeviceToken (device).then (token => {
+          return request ()
+            .delete ('/v1/firebase/devices/claims')
+            .withClientToken (0)
+            .send ({device: {device: token}})
+            .expect (403, { errors:
+                [ { code: 'unauthorized_claim',
+                  detail: 'The request is not authorized to manage the device claim.',
+                  status: '403' } ] });
+        });
       });
 
-      it ('should not allow user to unclaim another device', function (done) {
-        const device = blueprint.app.seeds.$default.devices[0];
+      it ('should not allow user to unclaim another device', function () {
+        const {devices} = seed ();
+        const device = devices[0];
 
-        blueprint.testing.request ()
-          .delete ('/v1/firebase/devices/claims')
-          .withUserToken (0)
-          .send ({device: {device: device.device_token}})
-          .expect (400, { errors:
-              [ { code: 'not_found',
-                detail: 'The device does not exist.',
-                status: '400' } ] }, done);
+        return generateDeviceToken (device).then (token => {
+          return request ()
+            .delete ('/v1/firebase/devices/claims')
+            .withUserToken (0)
+            .send ({device: {device: token}})
+            .expect (400, { errors:
+                [ { code: 'not_found',
+                  detail: 'The device does not exist, or the user does not own the device.',
+                  status: '400' } ] });
+        });
       });
     });
 

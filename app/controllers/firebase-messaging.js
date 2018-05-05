@@ -14,12 +14,16 @@
  * limitations under the License.
  */
 
-const { ResourceController } = require ('@onehilltech/blueprint-mongodb');
+const {
+  ResourceController,
+  Types: {ObjectId}
+} = require ('@onehilltech/blueprint-mongodb');
 
 const {
   Action,
   BadRequestError,
-  model
+  model,
+  service
 } = require ('@onehilltech/blueprint');
 
 /**
@@ -93,6 +97,8 @@ module.exports = ResourceController.extend ({
    */
   claimDevice () {
     return Action.extend ({
+      fcm: service (),
+
       schema: {
         'device.device': {
           isLength: {
@@ -105,7 +111,7 @@ module.exports = ResourceController.extend ({
       execute (req, res) {
         let deviceToken = req.body.device.device;
 
-        return this.controller.model.verifyDeviceToken (deviceToken)
+        return this.fcm.verifyToken (deviceToken)
           .then (payload => {
             const update = {user: req.user._id};
             return this.controller.model.findByIdAndUpdate (payload.jti, update, {new: true});
@@ -128,6 +134,8 @@ module.exports = ResourceController.extend ({
    */
   unclaimDevice () {
     return Action.extend ({
+      fcm: service (),
+
       schema: {
         'device.device': {
           isLength: {
@@ -140,16 +148,16 @@ module.exports = ResourceController.extend ({
       execute (req, res) {
         let deviceToken = req.body.device.device;
 
-        return this.controller.model.verifyDeviceToken (deviceToken)
+        return this.fcm.verifyToken (deviceToken)
           .then (payload => {
-            const selection = {_id: payload.jti, user: req.user._id};
+            const selection = {_id: new ObjectId (payload.jti), user: req.user._id};
             const update = {$unset: {user: ''}};
 
-            this.controller.model.findOneAndUpdate (selection, update, {new: true});
+            return this.controller.model.findOneAndUpdate (selection, update, {new: true});
           })
           .then (device => {
             if (!device)
-              return Promise.reject (new BadRequestError ('not_found', 'The device does not exist.'));
+              return Promise.reject (new BadRequestError ('not_found', 'The device does not exist, or the user does not own the device.'));
 
             let ret = device.toObject ();
             delete ret.id;
